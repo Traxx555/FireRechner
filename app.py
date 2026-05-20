@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 
 # --- SEITEN KONFIGURATION ---
-st.set_page_config(page_title="FIRE Simulator Pro", layout="wide", page_icon="🔥")
+st.set_page_config(page_title="FIRE Simulator", layout="wide", page_icon="🔥")
 
 # --- HILFSFUNKTIONEN (FINANZMATHEMATIK) ---
 
@@ -160,7 +160,7 @@ def run_simulation(params):
 
 # --- STREAMLIT UI ---
 
-st.title("🔥 Ultimate FIRE Simulator Pro")
+st.title("🔥 FIRE Simulator")
 st.markdown("### Präzisions-Engine für nominale Finanzplanung & Stress-Testing")
 
 # SIDEBAR EINGABEN
