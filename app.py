@@ -212,7 +212,7 @@ col3.metric("Basis-Bedarf (Bisektion)", format_de(results['benoetigt_basis']))
 
 # STATUS MELDUNG
 if results['achieved_cap_real'] >= results['benoetigt_safe']:
-    st.success("✅ DEIN PLAN IST ROBUST! Du erreichst das Reddit-Safe Zielkapital inklusive 20% Puffer.")
+    st.success("✅ DEIN PLAN IST ROBUST! Du erreichst das Safe-Community Zielkapital inklusive 20% Puffer.")
 elif results['achieved_cap_real'] >= results['benoetigt_basis']:
     st.warning("⚠️ ZIEL ERREICHT, ABER KNAPP. Dein Kapital reicht mathematisch aus, aber du hast keinen nennenswerten Puffer für Abweichungen.")
 else:
