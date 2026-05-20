@@ -233,7 +233,7 @@ fig.add_vline(x=a_fire, line_dash="dot", line_color="#3498db", annotation_text="
 fig.add_vline(x=a_ges, line_dash="dot", line_color="#9b59b6", annotation_text="Rente")
 
 fig.update_layout(yaxis_tickformat=',.0f', hovermode="x unified", height=500)
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, width='stretch')
 
 # LOGIK-INSPEKTOR
 with st.expander("🔬 Logik-Inspektor & Detaillierter Finanzbericht", expanded=True):
