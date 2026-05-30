@@ -25,7 +25,7 @@ def tax_logic(k_nom, s_nom, bedarf_nom, steuersatz, aktien_quote):
 
 def get_smile_factor(alter, use_smile):
     if not use_smile: return 1.0
-    if alter < 65: return 1.0
+    if alter < 70: return 1.0
     elif alter < 80: return 0.8
     else: return 1.2
 
@@ -249,23 +249,34 @@ with st.expander("🔬 Logik-Inspektor & Detaillierter Finanzbericht", expanded=
         - **Vorabpauschale:** Jährlich berücksichtigt (Sicherheits-Abschlag auf Zinseszins)
         
         ### 🎭 Konsumphasen (Spending Smile)
-        - **Go-Go Phase:** 100% Bedarf ({format_de(entn_1_m)}) bis 65.
-        - **Slow-Go Phase:** 80% Bedarf ab 65.
+        - **Go-Go Phase:** 100% Bedarf ({format_de(entn_1_m)}) bis 70.
+        - **Slow-Go Phase:** 80% Bedarf von 70 bis 80.
         - **No-Go Phase:** 120% Bedarf ab 80 (Pflege/Gesundheit).
         """)
         
-    with col_inf2:
-        st.markdown(f"""
-        ### 🛡️ Risikomanagement
-        - **Stresstest:** {'AKTIV (3 Jahre Bärenmarkt)' if use_stresstest else 'Inaktiv'}
-        - **SWR (Start):** {(entn_1_m * 12 / results['achieved_cap_real'] * 100):.2f}% p.a.
-        - **Guardrails:** {'AKTIV (10% Kürzung bei hohem SWR)' if use_guardrails else 'Inaktiv'}
+        with col_inf2:
+                # Berechnete Werte für die Erklärung
+                tf = 1.0 - ((aktien_quote / 100) * 0.30)
+                vorab_tax_pct_of_cap = 0.02 * tf * tax_rate_anspar  # in Prozent (jährlich, z.B. 0.369 -> 0.369% of capital)
+                entn_eff_tax_pct = tax_rate_entn * tf
+
+                st.markdown(f"""
+                ### 🛡️ Risikomanagement
+                - **Stresstest:** {'AKTIV (3 Jahre Bärenmarkt: Jahr1 -20%, Jahr2 -10%, Jahr3 0%)' if use_stresstest else 'Inaktiv'}
+                - **SWR (Start):** {(entn_1_m * 12 / results['achieved_cap_real'] * 100):.2f}% p.a.
+                - **Guardrails:** {'AKTIV (10% Kürzung bei hohem SWR)' if use_guardrails else 'Inaktiv'}
         
-        ### 🏛️ Steuer & Inflation
-        - **Realsteuer-Effekt:** Ca. {format_de(results['tax_real'])} reale Steuerlast über Gesamtlaufzeit.
-        - Getrennte Steuersätze: Die Simulation nutzt die volle Abgeltungsteuer für die Vorabpauschale in den Arbeitsjahren, erlaubt aber einen reduzierten Steuersatz (Günstigerprüfung) während der Rente.
-        - Dynamische Teilfreistellung: Der 30% Steuer-Rabatt wird exakt nach der eingestellten Aktienquote gewichtet. Risikoarme Anlagen (z.B. Festgeld/Anleihen) werden richtigerweise voll versteuert.
-        - **Zielkapital-Puffer:** 20% Sicherheitsmarge auf das Basis-Bedarfskapital.
-        """)
+                ### 🏛️ **Steuer & Inflation**
+                - **Realsteuer-Effekt:** Ca. {format_de(results['tax_real'])} reale Steuerlast über Gesamtlaufzeit.
+                - **Getrennte Steuersätze:** Die Simulation trennt die **Steuer Ansparphase** und die **Steuer Entnahmephase** (Günstigerprüfung). Konkret:
+                    - **Steuer Ansparphase:** Jährliche Vorabpauschale wird auf eine Basis von `2% * TF` des Jahreskapitals angewendet und mit `Steuer Ansparphase (%)` besteuert.
+                        - TF-Faktor (Teilfreistellung-Gewichtung): {tf:.3f}
+                        - Effektive Vorab-Basis: {100*0.02*tf:.3f}% des Kapitalstocks (z.B. 2% * {tf:.3f} = {100*0.02*tf:.3f}%)
+                        - Effektive jährliche Steuer auf Kapital (in % des Kapitals): {vorab_tax_pct_of_cap:.6f}% (gerechnet als `2% * TF * Steuer Ansparphase`).
+                    - **Steuer Entnahmephase:** Für Entnahmen wird der effektive Steuersatz auf den steuerpflichtigen Gewinnanteil mit `Steuer Entnahmephase (%)` berechnet, gewichtet durch denselben TF-Faktor.
+                        - Effektiver Steuersatz bei Entnahme: {entn_eff_tax_pct:.3f}% (gerechnet als `Steuer Entnahmephase * TF`).
+                - **Dynamische Teilfreistellung:** **Der 30% Steuer-Rabatt wird linear mit der eingestellten Aktienquote gewichtet.** Beispiel mit Aktienquote={aktien_quote}%: TF = {tf:.3f}, d.h. nur {tf*100:.1f}% der vollen Steuerlast greift auf den Gewinnanteil.
+                - **Zielkapital-Puffer:** 20% Sicherheitsmarge auf das Basis-Bedarfskapital.
+                """)
 
 st.caption("Hinweis: Dies ist eine Simulation basierend auf historischen Wahrscheinlichkeiten und steuerlichen Annahmen. Keine Anlageberatung.")
