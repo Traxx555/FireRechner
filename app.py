@@ -185,7 +185,7 @@ with st.sidebar:
     st.header("3. Markt & Risiko")
     r_anspar = st.number_input("Rendite Ansparphase (%)", value=7.5, step=0.1)
     r_entn = st.number_input("Rendite Entnahme (%)", value=5.5, step=0.1)
-    infl = st.number_input("Inflation (%)", value=3, step=0.1)
+    infl = st.number_input("Inflation (%)", value=3.0, step=0.1)
     tax_rate_anspar = st.number_input("Steuer Ansparphase (%)", value=26.375, step=0.1, format="%.3f")
     tax_rate_entn = st.number_input("Steuer Entnahmephase (%)", value=26.375, step=0.1, format="%.3f", help="Tipp: Für die Günstigerprüfung im Alter hier z.B. 15% eintragen")
     aktien_quote = st.slider("Aktien-ETF Quote im Depot (%)", min_value=0, max_value=100, value=100, step=5)
