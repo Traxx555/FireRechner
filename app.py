@@ -41,6 +41,7 @@ def run_simulation(params):
     tax_rate_anspar = params['tax_rate_anspar'] / 100
     tax_rate_entn = params['tax_rate_entn'] / 100
     aktien_quote = params['aktien_quote']
+    m_einmal = int(round((a_einmal - a_start) * 12))
     
     use_smile = params['use_smile']
     use_stresstest = params['use_stresstest']
@@ -62,13 +63,15 @@ def run_simulation(params):
         if m > 0 and m % 12 == 0:
             basis = k_jahr_start * 0.02 * (1.0 - ((aktien_quote / 100) * 0.30))
             vorab_steuer = max(0, basis * tax_rate_anspar)
-            if k_nom > k_jahr_start: k_nom -= vorab_steuer
+            if k_nom > k_jahr_start:
+                k_nom -= vorab_steuer
+                s_nom += basis
             k_jahr_start = k_nom
 
         if m % 12 == 0 or m == t_anspar: verlauf.append({'Alter': age, 'Kapital': k_nom / inf_fac})
         
         if m < t_anspar:
-            if abs(age - a_einmal) < 0.01: k_nom += einmal * inf_fac; s_nom += einmal * inf_fac
+            if m == m_einmal: k_nom += einmal * inf_fac; s_nom += einmal * inf_fac
             k_nom *= (1 + r_ans_m); k_nom += spar_nom; s_nom += spar_nom; spar_nom *= (1 + dyn_m)
     
     final_spar_nom = spar_nom / (1 + dyn_m)
@@ -93,7 +96,7 @@ def run_simulation(params):
                 i_wr = (entn_1_m*12)/start_k_real if start_k_real > 1000 else 0.04
                 if (bedarf*12)/(k/inf_fac) > i_wr * 1.2: bedarf *= 0.9
 
-            if abs(age - a_einmal) < 0.01: k += einmal * inf_fac; s += einmal * inf_fac
+            if (t_anspar + m) == m_einmal: k += einmal * inf_fac; s += einmal * inf_fac
             brutto, _ = tax_logic(k, s, bedarf*inf_fac, tax_rate_entn, aktien_quote)
             if k > 0: s *= max(0, (1.0 - (brutto/k)))
             k -= brutto
@@ -131,7 +134,7 @@ def run_simulation(params):
             i_wr = (entn_1_m*12)/achieved_cap_real if achieved_cap_real > 1000 else 0.04
             if (bedarf*12)/(k_nom/inf_fac) > i_wr * 1.2: bedarf *= 0.9
 
-        if abs(age - a_einmal) < 0.01: k_nom += einmal * inf_fac; s_nom += einmal * inf_fac
+        if (t_anspar + m) == m_einmal: k_nom += einmal * inf_fac; s_nom += einmal * inf_fac
         brutto, t = tax_logic(k_nom, s_nom, bedarf*inf_fac, tax_rate_entn, aktien_quote)
         tax_real += t / inf_fac
         if k_nom > 0: s_nom *= max(0, (1.0 - (brutto/k_nom)))
@@ -239,44 +242,119 @@ st.plotly_chart(fig, width='stretch')
 
 # LOGIK-INSPEKTOR
 with st.expander("🔬 Logik-Inspektor & Detaillierter Finanzbericht", expanded=True):
-    col_inf1, col_inf2 = st.columns(2)
-    
-    with col_inf1:
-        st.markdown(f"""
-        ### 🚀 Ansparphase
-        - **Dauer:** {a_fire - a_start} Jahre (von {a_start} bis {a_fire})
-        - **End-Sparrate:** Nominal {format_de(results['final_spar_nom'])} / Monat (durch Dynamik)
-        - **Vorabpauschale:** Jährlich berücksichtigt (Sicherheits-Abschlag auf Zinseszins)
-        
-        ### 🎭 Konsumphasen (Spending Smile)
-        - **Go-Go Phase:** 100% Bedarf ({format_de(entn_1_m)}) bis 70.
-        - **Slow-Go Phase:** 80% Bedarf von 70 bis 80.
-        - **No-Go Phase:** 120% Bedarf ab 80 (Pflege/Gesundheit).
-        """)
-        
-        with col_inf2:
-                # Berechnete Werte für die Erklärung
-                tf = 1.0 - ((aktien_quote / 100) * 0.30)
-                vorab_tax_pct_of_cap = 0.02 * tf * tax_rate_anspar  # in Prozent (jährlich, z.B. 0.369 -> 0.369% of capital)
-                entn_eff_tax_pct = tax_rate_entn * tf
+    tf = 1.0 - ((aktien_quote / 100) * 0.30)
+    entn_eff_tax_pct = tax_rate_entn * tf
+    start_swr = (entn_1_m * 12 / results['achieved_cap_real'] * 100) if results['achieved_cap_real'] > 0 else 0.0
 
-                st.markdown(f"""
-                ### 🛡️ Risikomanagement
-                - **Stresstest:** {'AKTIV (3 Jahre Bärenmarkt: Jahr1 -20%, Jahr2 -10%, Jahr3 0%)' if use_stresstest else 'Inaktiv'}
-                - **SWR (Start):** {(entn_1_m * 12 / results['achieved_cap_real'] * 100):.2f}% p.a.
-                - **Guardrails:** {'AKTIV (10% Kürzung bei hohem SWR)' if use_guardrails else 'Inaktiv'}
-        
-                ### 🏛️ **Steuer & Inflation**
-                - **Realsteuer-Effekt:** Ca. {format_de(results['tax_real'])} reale Steuerlast über Gesamtlaufzeit.
-                - **Getrennte Steuersätze:** Die Simulation trennt die **Steuer Ansparphase** und die **Steuer Entnahmephase** (Günstigerprüfung). Konkret:
-                    - **Steuer Ansparphase:** Jährliche Vorabpauschale wird auf eine Basis von `2% * TF` des Jahreskapitals angewendet und mit `Steuer Ansparphase (%)` besteuert.
-                        - TF-Faktor (Teilfreistellung-Gewichtung): {tf:.3f}
-                        - Effektive Vorab-Basis: {100*0.02*tf:.3f}% des Kapitalstocks (z.B. 2% * {tf:.3f} = {100*0.02*tf:.3f}%)
-                        - Effektive jährliche Steuer auf Kapital (in % des Kapitals): {vorab_tax_pct_of_cap:.6f}% (gerechnet als `2% * TF * Steuer Ansparphase`).
-                    - **Steuer Entnahmephase:** Für Entnahmen wird der effektive Steuersatz auf den steuerpflichtigen Gewinnanteil mit `Steuer Entnahmephase (%)` berechnet, gewichtet durch denselben TF-Faktor.
-                        - Effektiver Steuersatz bei Entnahme: {entn_eff_tax_pct:.3f}% (gerechnet als `Steuer Entnahmephase * TF`).
-                - **Dynamische Teilfreistellung:** **Der 30% Steuer-Rabatt wird linear mit der eingestellten Aktienquote gewichtet.** Beispiel mit Aktienquote={aktien_quote}%: TF = {tf:.3f}, d.h. nur {tf*100:.1f}% der vollen Steuerlast greift auf den Gewinnanteil.
-                - **Zielkapital-Puffer:** 20% Sicherheitsmarge auf das Basis-Bedarfskapital.
-                """)
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "🔥 FIRE-Basics & SWR",
+        "⚖️ Steuern & Mathematik",
+        "🛡️ Risiko & Bärenmarkt",
+        "📈 Inflation & Lebensphasen"
+    ])
+
+    with tab1:
+        st.markdown(f"""
+        ### 🔥 Was ist FIRE?
+        **FIRE** steht für *Financial Independence, Retire Early*. Das bedeutet: Du erreichst ein Kapital, das deine jährlichen Lebenshaltungskosten dauerhaft deckt, sodass du finanziell unabhängig wirst und theoretisch früher aufhören kannst zu arbeiten.
+
+        ### 💡 Deine persönliche Start-SWR
+        - **Start-Sparrate:** {format_de(entn_1_m)} pro Monat → {format_de(entn_1_m*12)} pro Jahr
+        - **Erreichtes FIRE-Kapital:** {format_de(results['achieved_cap_real'])}
+        - **Start-SWR:** {start_swr:.2f}% p.a.
+
+        Die **Safe Withdrawal Rate (SWR)** beschreibt, wie viel Prozent deines Kapitalstocks du im ersten Jahr entnehmen kannst, ohne das Depot zu schnell zu ruinieren.
+        - Die bekannte **4%-Regel** der Trinity-Studie sagt: Bei einem breit gestreuten Aktien-/Anleihe-Depot und 30-jähriger Entnahme gilt eine Entnahmerate von rund 4% als langfristig sicher.
+        - Eine **SWR unter 3.5%** gilt im FIRE-Kontext als **besonders konservativ und „kugelsicher“**, weil sie mehr Puffer gegen schlechte Börsenjahre schafft.
+
+        ### 🛡️ Safe Zielkapital
+        Dein **Basis-Zielkapital** ist die Summe, die die App als rechnerisch notwendig erachtet.
+        Die App schlägt zusätzlich **20% Puffer** auf dieses Kapital auf, weil:
+        - Märkte schwanken,
+        - Renditen in der Zukunft unsicher sind,
+        - Steuern und Inflation weiter wirken.
+
+        > Der Puffer ist kein Luxus, sondern ein Sicherheitsnetz. Er hilft zu verhindern, dass ein einzelner schlechter Marktzyklus deinen FIRE-Plan zerstört.
+        """)
+
+    with tab2:
+        st.markdown(f"""
+        ### ⚖️ Mischkursverfahren & Steuerlogik
+        Im Ruhestand werden Entnahmen nicht vollständig versteuert. Die App berechnet mit dem **Mischkursverfahren**, dass nur der **Gewinnanteil** steuerpflichtig ist.
+
+        - **k_nom** ist das nominale Depotvolumen.
+        - **s_nom** ist der Einstandswert, also der Teil des Depots, der bereits versteuert oder aus eigener Einlage stammt.
+        - Je größer der Anteil von `s_nom` im Vergleich zu `k_nom`, desto geringer ist der steuerpflichtige Gewinnanteil.
+
+        Beispiel für deinen Plan:
+        - Depotwert: {format_de(results['achieved_cap_real'])}
+        - Wenn der Einstandswert hoch ist, fällt in der Rente weniger Steuer an.
+
+        ### 🧾 Vorabpauschale in der Ansparphase
+        In der Ansparphase zieht der Staat jährlich eine **fiktive Steuer** von deinem Depot ab, die sogenannte **Vorabpauschale**.
+        Sie ist keine echte Auszahlung, sondern ein steuerliches Abgeltungssteuer-Aggregat auf die fiktiven Erträge.
+
+        In dieser App nutzt die Vorabpauschale stur die volle **Abgeltungsteuer** auf die Ansparphase, weil:
+        - während des Berufslebens in der Regel kein großer **Freibetrag** mehr verfügbar ist,
+        - die Abgeltungsteuer auf Kapitalerträge standardmäßig 26,375% beträgt.
+
+        Jedes Jahr wird die Vorabpauschale auf eine Basis von **2% des Depotwerts**, reduziert um den Teilfreistellungsfaktor.
+
+        ### 🧮 Günstigerprüfung & Teilfreistellung
+        In der Entnahmephase kann dein Steuersatz deutlich niedriger sein, weil dein sonstiges Einkommen meist sinkt.
+        - Die App verwendet für die **Steuer Entnahmephase** dein eingegebenes `Steuer Entnahmephase (%)`.
+        - Zusätzlich reduziert der ETF-Anteil die Steuerlast durch den **30% Rabatt**.
+
+        Dein eingestellter Aktienanteil: **{aktien_quote}%**
+        - Teilfreistellung-Faktor (TF): **{tf:.3f}**
+        - Effektiver Steuerfaktor in der Rente: **{entn_eff_tax_pct:.3f}**
+
+        Das bedeutet: Statt der vollen Steuer wird auf den Gewinnanteil nur noch ein geringerer Prozentsatz angewendet.
+
+        > Je höher dein Aktienanteil, desto stärker wirkt der ETF-Rabatt.
+        """)
+
+    with tab3:
+        st.markdown(f"""
+        ### 🛡️ Sequence of Return Risk (SoRR)
+        SoRR bedeutet: Wenn die Börse in den ersten Rentenjahren fällt, kann das Depot schneller schrumpfen.
+        Die App simuliert daher einen möglichen **Bärenmarkt** in den ersten 3 Jahren deiner Entnahmephase:
+        - Jahr 1: **-20%**
+        - Jahr 2: **-10%**
+        - Jahr 3: **0%**
+
+        Wenn der Schalter für den Stresstest aktiv ist, prüft die Simulation genau diese kritische Phase.
+
+        ### 🚨 Guardrails nach Guyton-Klinger
+        Die App nutzt eine vereinfachte Guardrail-Regel:
+        - Wenn dein Depot durch den Bärenmarkt stark fällt,
+        - und die aktuelle Entnahmerate mehr als **20% über der Start-SWR** liegt,
+        - wird dein Bedarf vorübergehend um **10% reduziert**.
+
+        Das ist kein permanenter Verzicht, sondern ein Modell für **temporäres Krisenmanagement**:
+        - kein teurer Urlaub,
+        - weniger Restaurantbesuche,
+        - konservativerer Lebensstil.
+
+        Diese Regel hilft dabei, den Plan auch in schlechten Marktphasen stabil zu halten.
+        """)
+
+    with tab4:
+        st.markdown(f"""
+        ### 📈 Nominal vs. Real
+        - **Nominal** bedeutet: echte Euro-Beträge ohne Kaufkraftanpassung.
+        - **Real** bedeutet: Beträge in heutiger Kaufkraft.
+
+        Die App rechnet intern nominal, weil das die echten Depotbewegungen abbildet.
+        Für die Charts zeigt sie die Werte aber in **heutiger Kaufkraft**, damit du das Ergebnis besser verstehst.
+
+        ### 💸 Spending Smile
+        Die Lebensphasen werden wie folgt modelliert:
+        - **Go-Go Phase** bis 70: **100% Bedarf**. In den ersten Rentenjahren sind Reisen, Freizeit und Lifestyle oft am teuersten.
+        - **Slow-Go Phase** 70–80: **80% Bedarf**. Danach wird das Leben ruhiger und günstiger.
+        - **No-Go Phase** ab 80: **120% Bedarf**. Pflege, Gesundheit und unerwartete Kosten steigen wieder.
+
+        Dieses Modell soll dir helfen zu verstehen, dass Rente nicht „konstant“ ist, sondern verschiedene Kostenphasen hat.
+        """)
 
 st.caption("Hinweis: Dies ist eine Simulation basierend auf historischen Wahrscheinlichkeiten und steuerlichen Annahmen. Keine Anlageberatung.")
