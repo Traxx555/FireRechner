@@ -13,11 +13,12 @@ def format_de(val):
     if val == float('inf'): return "Unendlich"
     return f"{val:,.0f} €".replace(',', 'X').replace('.', ',').replace('X', '.')
 
-def tax_logic(k_nom, s_nom, bedarf_nom, steuersatz, teilfrei):
+def tax_logic(k_nom, s_nom, bedarf_nom, steuersatz, aktien_quote):
     """Berechnet Bruttoentnahme aus Nominalwerten (Mischkursverfahren)."""
     if k_nom <= 0: return bedarf_nom, 0
     gewinnanteil = max(0.0, 1.0 - (s_nom / k_nom))
-    eff_steuer = steuersatz * (0.7 if teilfrei else 1.0)
+    tf_faktor = 1.0 - ((aktien_quote / 100) * 0.30)
+    eff_steuer = steuersatz * tf_faktor
     faktor = 1.0 - (gewinnanteil * eff_steuer)
     brutto = bedarf_nom / faktor if faktor > 0 else bedarf_nom
     return brutto, brutto - bedarf_nom
@@ -37,12 +38,13 @@ def run_simulation(params):
     entn_1_m, entn_2_m = params['entn_1_m'], params['entn_2_m']
     einmal, a_einmal = params['einmal'], params['a_einmal']
     r_anspar, r_entn, infl = params['r_anspar'] / 100, params['r_entn'] / 100, params['infl'] / 100
-    tax_rate, teilfrei = params['tax_rate'] / 100, params['teilfrei']
+    tax_rate_anspar = params['tax_rate_anspar'] / 100
+    tax_rate_entn = params['tax_rate_entn'] / 100
+    aktien_quote = params['aktien_quote']
     
     use_smile = params['use_smile']
     use_stresstest = params['use_stresstest']
     use_guardrails = params['use_guardrails']
-    ziel_modus = params['ziel_modus']
 
     # Monatliche Raten
     r_ans_m = (1+r_anspar)**(1/12)-1; r_ent_m = (1+r_entn)**(1/12)-1; inf_m = (1+infl)**(1/12)-1; dyn_m = (1+dyn)**(1/12)-1
@@ -58,8 +60,8 @@ def run_simulation(params):
 
         # Vorabpauschale (Jährlich)
         if m > 0 and m % 12 == 0:
-            basis = k_jahr_start * 0.02 * (0.7 if teilfrei else 1.0)
-            vorab_steuer = max(0, basis * tax_rate)
+            basis = k_jahr_start * 0.02 * (1.0 - ((aktien_quote / 100) * 0.30))
+            vorab_steuer = max(0, basis * tax_rate_anspar)
             if k_nom > k_jahr_start: k_nom -= vorab_steuer
             k_jahr_start = k_nom
 
@@ -92,7 +94,7 @@ def run_simulation(params):
                 if (bedarf*12)/(k/inf_fac) > i_wr * 1.2: bedarf *= 0.9
 
             if abs(age - a_einmal) < 0.01: k += einmal * inf_fac; s += einmal * inf_fac
-            brutto, _ = tax_logic(k, s, bedarf*inf_fac, tax_rate, teilfrei)
+            brutto, _ = tax_logic(k, s, bedarf*inf_fac, tax_rate_entn, aktien_quote)
             if k > 0: s *= max(0, (1.0 - (brutto/k)))
             k -= brutto
             if k <= 0: return k, m
@@ -110,8 +112,7 @@ def run_simulation(params):
     for _ in range(50):
         mid = (low_n + high_n)/2
         end_k, _ = sim_ret(mid, mid * s_ratio)
-        target = mid * (1+infl)**(a_ende-a_fire) if ziel_modus == "erhalt" else 0
-        if end_k >= target: high_n = mid
+        if end_k >= 0: high_n = mid
         else: low_n = mid
 
     benoetigt_real = high_n / (1+inf_m)**t_anspar
@@ -131,7 +132,7 @@ def run_simulation(params):
             if (bedarf*12)/(k_nom/inf_fac) > i_wr * 1.2: bedarf *= 0.9
 
         if abs(age - a_einmal) < 0.01: k_nom += einmal * inf_fac; s_nom += einmal * inf_fac
-        brutto, t = tax_logic(k_nom, s_nom, bedarf*inf_fac, tax_rate, teilfrei)
+        brutto, t = tax_logic(k_nom, s_nom, bedarf*inf_fac, tax_rate_entn, aktien_quote)
         tax_real += t / inf_fac
         if k_nom > 0: s_nom *= max(0, (1.0 - (brutto/k_nom)))
         k_nom -= brutto
@@ -185,10 +186,10 @@ with st.sidebar:
     r_anspar = st.number_input("Rendite Ansparphase (%)", value=5.5, step=0.1)
     r_entn = st.number_input("Rendite Entnahme (%)", value=4.0, step=0.1)
     infl = st.number_input("Inflation (%)", value=3.5, step=0.1)
-    tax_rate = st.number_input("Abgeltungsteuer (%)", value=26.375, step=0.1, format="%.3f")
-    teilfrei = st.checkbox("30% Teilfreistellung", value=True)
+    tax_rate_anspar = st.number_input("Steuer Ansparphase (%)", value=26.375, step=0.1, format="%.3f")
+    tax_rate_entn = st.number_input("Steuer Entnahmephase (%)", value=26.375, step=0.1, format="%.3f", help="Tipp: Für die Günstigerprüfung im Alter hier z.B. 15% eintragen")
+    aktien_quote = st.slider("Aktien-ETF Quote im Depot (%)", min_value=0, max_value=100, value=100, step=5)
     st.divider()
-    ziel_modus = st.radio("Ziel-Strategie", options=["zero", "erhalt"], format_func=lambda x: "Kapitalverzehr" if x=="zero" else "Kapitalerhalt")
     use_smile = st.checkbox("Spending Smile (U-Kurve)", value=True)
     use_stresstest = st.checkbox("3-jähriger Bärenmarkt (SoRR)", value=True)
     use_guardrails = st.checkbox("Guardrails (Sparmodus)", value=True)
@@ -198,8 +199,9 @@ sim_params = {
     'a_start': a_start, 'a_fire': a_fire, 'a_ges': a_ges, 'a_ende': a_ende,
     'cap_start': cap_start, 'sparrate_m': sparrate_m, 'dyn': dyn,
     'entn_1_m': entn_1_m, 'entn_2_m': entn_2_m, 'einmal': einmal, 'a_einmal': a_einmal,
-    'r_anspar': r_anspar, 'r_entn': r_entn, 'infl': infl, 'tax_rate': tax_rate, 'teilfrei': teilfrei,
-    'ziel_modus': ziel_modus, 'use_smile': use_smile, 'use_stresstest': use_stresstest, 'use_guardrails': use_guardrails
+    'r_anspar': r_anspar, 'r_entn': r_entn, 'infl': infl,
+    'tax_rate_anspar': tax_rate_anspar, 'tax_rate_entn': tax_rate_entn, 'aktien_quote': aktien_quote,
+    'use_smile': use_smile, 'use_stresstest': use_stresstest, 'use_guardrails': use_guardrails
 }
 
 results = run_simulation(sim_params)
@@ -261,6 +263,8 @@ with st.expander("🔬 Logik-Inspektor & Detaillierter Finanzbericht", expanded=
         
         ### 🏛️ Steuer & Inflation
         - **Realsteuer-Effekt:** Ca. {format_de(results['tax_real'])} reale Steuerlast über Gesamtlaufzeit.
+        - Getrennte Steuersätze: Die Simulation nutzt die volle Abgeltungsteuer für die Vorabpauschale in den Arbeitsjahren, erlaubt aber einen reduzierten Steuersatz (Günstigerprüfung) während der Rente.
+        - Dynamische Teilfreistellung: Der 30% Steuer-Rabatt wird exakt nach der eingestellten Aktienquote gewichtet. Risikoarme Anlagen (z.B. Festgeld/Anleihen) werden richtigerweise voll versteuert.
         - **Zielkapital-Puffer:** 20% Sicherheitsmarge auf das Basis-Bedarfskapital.
         """)
 
