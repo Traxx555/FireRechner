@@ -116,7 +116,7 @@ def run_simulation(params):
             brutto, _ = tax_logic(k, s, bedarf*inf_fac, tax_rate_entn, aktien_quote)
             if k > 0: s *= max(0, (1.0 - (brutto/k)))
             k -= brutto
-            if k <= 0: return 0, m
+            if k <= 0: return -1, m
 
             # Rendite anwenden
             curr_r = r_ent_m
