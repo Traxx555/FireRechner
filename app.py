@@ -2,7 +2,6 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
-import numpy as np
 
 # --- SEITEN KONFIGURATION ---
 st.set_page_config(page_title="FIRE Simulator", layout="wide", page_icon="🔥")
@@ -20,7 +19,8 @@ def tax_logic(k_nom, s_nom, bedarf_nom, steuersatz, aktien_quote):
     tf_faktor = 1.0 - ((aktien_quote / 100) * 0.30)
     eff_steuer = steuersatz * tf_faktor
     faktor = 1.0 - (gewinnanteil * eff_steuer)
-    brutto = bedarf_nom / faktor if faktor > 0 else bedarf_nom
+    faktor = max(0.01, faktor)
+    brutto = bedarf_nom / faktor
     return brutto, brutto - bedarf_nom
 
 def get_smile_factor(alter, use_smile):
@@ -84,31 +84,48 @@ def run_simulation(params):
     def sim_ret(start_k_nom, start_s_nom):
         k, s = start_k_nom, start_s_nom
         t_ret = (a_ende - a_fire) * 12
-        r_bear_m = [(1-0.20)**(1/12)-1, (1-0.10)**(1/12)-1, (1+0.00)**(1/12)-1]
+        
+        # Bärenmarkt-Setup (SoRR)
+        r_bear_y = [-0.20, -0.10, 0.00]
+        
+        # Start-Werte für Guardrails
+        start_k_real = start_k_nom / (1+inf_m)**t_anspar
+        start_bedarf_real = entn_1_m
+        start_swr = (start_bedarf_real * 12 / start_k_real) if start_k_real > 1000 else 0.04
+        current_bedarf_real = start_bedarf_real
 
-        for m in range(t_ret + 1):
+        for m in range(t_ret):
             age = a_fire + m/12
             inf_fac = (1+inf_m)**(t_anspar + m)
-            bedarf = (entn_1_m if age < a_ges else entn_2_m) * get_smile_factor(age, use_smile)
-
-            start_k_real = start_k_nom / (1+inf_m)**t_anspar
+            
+            # Bedarf ermitteln (Smile + Guardrails)
+            base_bedarf = (entn_1_m if age < a_ges else entn_2_m) * get_smile_factor(age, use_smile)
+            
             if use_guardrails and k > 0:
-                i_wr = (entn_1_m*12)/start_k_real if start_k_real > 1000 else 0.04
-                if (bedarf*12)/(k/inf_fac) > i_wr * 1.2: bedarf *= 0.9
+                current_k_real = k / inf_fac
+                current_swr = (current_bedarf_real * 12 / current_k_real) if current_k_real > 1000 else start_swr
+                if current_swr > start_swr * 1.2:
+                    current_bedarf_real *= 0.99 # Sanfte Reduktion
+                elif current_swr < start_swr * 0.8:
+                    current_bedarf_real *= 1.01 # Sanfte Erholung
+                bedarf = current_bedarf_real * get_smile_factor(age, use_smile)
+            else:
+                bedarf = base_bedarf
 
             if (t_anspar + m) == m_einmal: k += einmal * inf_fac; s += einmal * inf_fac
             brutto, _ = tax_logic(k, s, bedarf*inf_fac, tax_rate_entn, aktien_quote)
             if k > 0: s *= max(0, (1.0 - (brutto/k)))
             k -= brutto
-            if k <= 0: return k, m
+            if k <= 0: return 0, m
 
-            if m < t_ret:
-                curr_r = r_ent_m
-                if use_stresstest:
-                    if m < 12: curr_r = r_bear_m[0]
-                    elif m < 24: curr_r = r_bear_m[1]
-                    elif m < 36: curr_r = r_bear_m[2]
-                k *= (1 + curr_r)
+            # Rendite anwenden
+            curr_r = r_ent_m
+            if use_stresstest:
+                year = m // 12
+                if year < 3:
+                    y_rate = (1 + r_bear_y[year])**(1/12) - 1
+                    curr_r = y_rate
+            k *= (1 + curr_r)
         return k, None
 
     low_n, high_n = 0.0, 100_000_000.0
@@ -124,33 +141,52 @@ def run_simulation(params):
     # --- 3. FINALER DURCHLAUF (Chart & Logik) ---
     k_nom, s_nom, pleite, tax_real = achieved_cap_nom, achieved_s_nom, None, 0
     t_ret = (a_ende - a_fire) * 12
-    r_bear_m = [(1-0.20)**(1/12)-1, (1-0.10)**(1/12)-1, (1+0.00)**(1/12)-1]
+    
+    # Gleiche Logik wie sim_ret für Konsistenz
+    r_bear_y = [-0.20, -0.10, 0.00]
+    current_bedarf_real = entn_1_m
+    start_swr = (entn_1_m * 12 / achieved_cap_real) if achieved_cap_real > 1000 else 0.04
 
-    for m in range(1, t_ret + 1):
-        age, inf_fac = a_fire + m/12, (1+inf_m)**(t_anspar + m)
-        bedarf = (entn_1_m if age < a_ges else entn_2_m) * get_smile_factor(age, use_smile)
+    for m in range(t_ret):
+        age = a_fire + m/12
+        inf_fac = (1+inf_m)**(t_anspar + m)
         
+        base_bedarf = (entn_1_m if age < a_ges else entn_2_m) * get_smile_factor(age, use_smile)
         if use_guardrails and k_nom > 0:
-            i_wr = (entn_1_m*12)/achieved_cap_real if achieved_cap_real > 1000 else 0.04
-            if (bedarf*12)/(k_nom/inf_fac) > i_wr * 1.2: bedarf *= 0.9
+            current_k_real = k_nom / inf_fac
+            current_swr = (current_bedarf_real * 12 / current_k_real) if current_k_real > 1000 else start_swr
+            if current_swr > start_swr * 1.2:
+                current_bedarf_real *= 0.99
+            elif current_swr < start_swr * 0.8:
+                current_bedarf_real *= 1.01
+            bedarf = current_bedarf_real * get_smile_factor(age, use_smile)
+        else:
+            bedarf = base_bedarf
 
         if (t_anspar + m) == m_einmal: k_nom += einmal * inf_fac; s_nom += einmal * inf_fac
         brutto, t = tax_logic(k_nom, s_nom, bedarf*inf_fac, tax_rate_entn, aktien_quote)
         tax_real += t / inf_fac
         if k_nom > 0: s_nom *= max(0, (1.0 - (brutto/k_nom)))
         k_nom -= brutto
+        
         if k_nom <= 0:
             if pleite is None: pleite = age
             k_nom = 0
-        if m % 12 == 0 or m == t_ret: verlauf.append({'Alter': age, 'Kapital': k_nom / inf_fac})
+        
+        if m % 12 == 0: verlauf.append({'Alter': age, 'Kapital': k_nom / inf_fac})
 
-        if k_nom > 0:
-            curr_r = r_ent_m
-            if use_stresstest:
-                if (m-1) < 12: curr_r = r_bear_m[0]
-                elif (m-1) < 24: curr_r = r_bear_m[1]
-                elif (m-1) < 36: curr_r = r_bear_m[2]
-            k_nom *= (1 + curr_r)
+        # Rendite anwenden
+        curr_r = r_ent_m
+        if use_stresstest:
+            year = m // 12
+            if year < 3:
+                y_rate = (1 + r_bear_y[year])**(1/12) - 1
+                curr_r = y_rate
+        k_nom *= (1 + curr_r)
+
+    # Letzten Punkt hinzufügen
+    verlauf.append({'Alter': a_ende, 'Kapital': k_nom / (1+inf_m)**(t_anspar + t_ret)})
+
 
     return {
         'verlauf': pd.DataFrame(verlauf),
@@ -258,13 +294,13 @@ with st.expander("🔬 Logik-Inspektor & Detaillierter Finanzbericht", expanded=
         ### 🔥 Was ist FIRE?
         **FIRE** steht für *Financial Independence, Retire Early*. Das bedeutet: Du erreichst ein Kapital, das deine jährlichen Lebenshaltungskosten dauerhaft deckt, sodass du finanziell unabhängig wirst und theoretisch früher aufhören kannst zu arbeiten.
 
-        ### 💡 Deine persönliche Start-SWR
-        - **Start-Sparrate:** {format_de(entn_1_m)} pro Monat → {format_de(entn_1_m*12)} pro Jahr
+        ### 💡 Deine persönliche Start-Entnahme & SWR
+        - **Start-Entnahme:** {format_de(entn_1_m)} pro Monat → {format_de(entn_1_m*12)} pro Jahr
         - **Erreichtes FIRE-Kapital:** {format_de(results['achieved_cap_real'])}
         - **Start-SWR:** {start_swr:.2f}% p.a.
 
         Die **Safe Withdrawal Rate (SWR)** beschreibt, wie viel Prozent deines Kapitalstocks du im ersten Jahr entnehmen kannst, ohne das Depot zu schnell zu ruinieren.
-        - Die bekannte **4%-Regel** der Trinity-Studie sagt: Bei einem breit gestreuten Aktien-/Anleihe-Depot und 30-jähriger Entnahme gilt eine Entnahmerate von rund 4% als langfristig sicher.
+        - Die historische Trinity-Studie zeigte, dass eine anfängliche Entnahmerate von etwa 4% in vielen historischen Marktphasen über 30 Jahre funktioniert hätte.
         - Eine **SWR unter 3.5%** gilt im FIRE-Kontext als **besonders konservativ und „kugelsicher“**, weil sie mehr Puffer gegen schlechte Börsenjahre schafft.
 
         ### 🛡️ Safe Zielkapital
@@ -291,7 +327,7 @@ with st.expander("🔬 Logik-Inspektor & Detaillierter Finanzbericht", expanded=
         - Wenn der Einstandswert hoch ist, fällt in der Rente weniger Steuer an.
 
         ### 🧾 Vorabpauschale in der Ansparphase
-        In der Ansparphase zieht der Staat jährlich eine **fiktive Steuer** von deinem Depot ab, die sogenannte **Vorabpauschale**.
+        In der Ansparphase approximiert die App die steuerliche Wirkung der **Vorabpauschale** durch einen pauschalen jährlichen Steuerabschlag.
         Sie ist keine echte Auszahlung, sondern ein steuerliches Abgeltungssteuer-Aggregat auf die fiktiven Erträge.
 
         In dieser App nutzt die Vorabpauschale stur die volle **Abgeltungsteuer** auf die Ansparphase, weil:
@@ -323,13 +359,12 @@ with st.expander("🔬 Logik-Inspektor & Detaillierter Finanzbericht", expanded=
         - Jahr 2: **-10%**
         - Jahr 3: **0%**
 
-        Wenn der Schalter für den Stresstest aktiv ist, prüft die Simulation genau diese kritische Phase.
+        Wenn der Schalter für den Stresstest aktiv ist, prüft die Simulation genau diese kritische Phase. Die Simulation ist dabei deterministisch: Die Renditen verlaufen nicht zufällig, sondern folgen diesen festen Werten.
 
-        ### 🚨 Guardrails nach Guyton-Klinger
-        Die App nutzt eine vereinfachte Guardrail-Regel:
-        - Wenn dein Depot durch den Bärenmarkt stark fällt,
-        - und die aktuelle Entnahmerate mehr als **20% über der Start-SWR** liegt,
-        - wird dein Bedarf vorübergehend um **10% reduziert**.
+        ### 🚨 Vereinfachte Guardrail-Logik inspiriert von Guyton-Klinger
+        Die App nutzt eine dynamische Anpassung der Entnahmen:
+        - Wenn dein Depot durch schlechte Märkte fällt und die aktuelle Entnahmerate (SWR) um mehr als **20% über die Start-SWR** steigt, wird der Bedarf schrittweise reduziert.
+        - Erholt sich das Depot wieder und die SWR fällt unter **80% der Start-SWR**, kann die Entnahme wieder leicht steigen.
 
         Das ist kein permanenter Verzicht, sondern ein Modell für **temporäres Krisenmanagement**:
         - kein teurer Urlaub,
