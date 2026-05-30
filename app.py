@@ -92,7 +92,7 @@ def run_simulation(params):
         start_k_real = start_k_nom / (1+inf_m)**t_anspar
         start_bedarf_real = entn_1_m
         start_swr = (start_bedarf_real * 12 / start_k_real) if start_k_real > 1000 else 0.04
-        current_bedarf_real = start_bedarf_real
+        guardrail_faktor = 1.0
 
         for m in range(t_ret):
             age = a_fire + m/12
@@ -102,13 +102,17 @@ def run_simulation(params):
             base_bedarf = (entn_1_m if age < a_ges else entn_2_m) * get_smile_factor(age, use_smile)
             
             if use_guardrails and k > 0:
-                current_k_real = k / inf_fac
-                current_swr = (current_bedarf_real * 12 / current_k_real) if current_k_real > 1000 else start_swr
-                if current_swr > start_swr * 1.2:
-                    current_bedarf_real *= 0.99 # Sanfte Reduktion
-                elif current_swr < start_swr * 0.8:
-                    current_bedarf_real *= 1.01 # Sanfte Erholung
-                bedarf = current_bedarf_real * get_smile_factor(age, use_smile)
+                # Guardrails greifen nur 1x pro Jahr (m % 12 == 0)
+                if m > 0 and m % 12 == 0:
+                    current_k_real = k / inf_fac
+                    current_swr = (base_bedarf * guardrail_faktor * 12 / current_k_real) if current_k_real > 1000 else start_swr
+                    
+                    if current_swr > start_swr * 1.2:
+                        guardrail_faktor *= 0.90  # 10% Kürzung bei starkem Crash
+                    elif current_swr < start_swr * 0.8:
+                        guardrail_faktor *= 1.05  # 5% Erhöhung bei extrem guten Märkten
+                        
+                bedarf = base_bedarf * guardrail_faktor
             else:
                 bedarf = base_bedarf
 
@@ -144,7 +148,7 @@ def run_simulation(params):
     
     # Gleiche Logik wie sim_ret für Konsistenz
     r_bear_y = [-0.20, -0.10, 0.00]
-    current_bedarf_real = entn_1_m
+    guardrail_faktor = 1.0
     start_swr = (entn_1_m * 12 / achieved_cap_real) if achieved_cap_real > 1000 else 0.04
 
     for m in range(t_ret):
@@ -153,13 +157,17 @@ def run_simulation(params):
         
         base_bedarf = (entn_1_m if age < a_ges else entn_2_m) * get_smile_factor(age, use_smile)
         if use_guardrails and k_nom > 0:
-            current_k_real = k_nom / inf_fac
-            current_swr = (current_bedarf_real * 12 / current_k_real) if current_k_real > 1000 else start_swr
-            if current_swr > start_swr * 1.2:
-                current_bedarf_real *= 0.99
-            elif current_swr < start_swr * 0.8:
-                current_bedarf_real *= 1.01
-            bedarf = current_bedarf_real * get_smile_factor(age, use_smile)
+            # Guardrails greifen nur 1x pro Jahr (m % 12 == 0)
+            if m > 0 and m % 12 == 0:
+                current_k_real = k_nom / inf_fac
+                current_swr = (base_bedarf * guardrail_faktor * 12 / current_k_real) if current_k_real > 1000 else start_swr
+                
+                if current_swr > start_swr * 1.2:
+                    guardrail_faktor *= 0.90  # 10% Kürzung bei starkem Crash
+                elif current_swr < start_swr * 0.8:
+                    guardrail_faktor *= 1.05  # 5% Erhöhung bei extrem guten Märkten
+                    
+            bedarf = base_bedarf * guardrail_faktor
         else:
             bedarf = base_bedarf
 
