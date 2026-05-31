@@ -323,15 +323,17 @@ with st.expander("🔬 Logik-Inspektor & Detaillierter Finanzbericht", expanded=
     with tab2:
         st.markdown(f"""
         ### ⚖️ Mischkursverfahren & Steuerlogik
-        Im Ruhestand werden Entnahmen nicht vollständig versteuert. Die App berechnet mit dem **Mischkursverfahren**, dass nur der **Gewinnanteil** steuerpflichtig ist.
+        Im Ruhestand werden Entnahmen nicht vollständig versteuert. Die App berechnet mit dem **Mischkursverfahren**, dass nur der **Gewinnanteil** deiner Entnahme steuerpflichtig ist.
 
-        - **k_nom** ist das nominale Depotvolumen.
-        - **s_nom** ist der Einstandswert, also der Teil des Depots, der bereits versteuert oder aus eigener Einlage stammt.
-        - Je größer der Anteil von `s_nom` im Vergleich zu `k_nom`, desto geringer ist der steuerpflichtige Gewinnanteil.
+        Stell dir dein Depot wie einen Kuchen vor, der aus zwei Zutaten besteht:
+        - **Dein eigenes Geld:** Alles, was du im Laufe deines Lebens selbst eingezahlt hast (plus Gewinne, die in der Vergangenheit schon durch die Vorabpauschale versteuert wurden). Dieser Teil ist komplett **steuerfrei**.
+        - **Deine reinen Gewinne:** Nur auf diesen Anteil der Entnahme fallen beim Verkaufen Steuern an.
 
-        Beispiel für deinen Plan:
-        - Depotwert: {format_de(results['achieved_cap_real'])}
-        - Wenn der Einstandswert hoch ist, fällt in der Rente weniger Steuer an.
+        Je größer der Anteil deines eigenen Geldes am Gesamtdepot ist, desto geringer ist deine echte Steuerlast bei jeder Entnahme.
+
+        **Dein FIRE-Start:**
+        - Erreichtes Depotvolumen: {format_de(results['achieved_cap_real'])}
+        - *Die App merkt sich im Hintergrund exakt das Verhältnis aus deinen Einzahlungen und deinen reinen Gewinnen, um deine Rente auf den Cent genau zu besteuern.*
 
         ### 🧾 Vorabpauschale in der Ansparphase
         In der Ansparphase approximiert die App die steuerliche Wirkung der **Vorabpauschale** durch einen pauschalen jährlichen Steuerabschlag.
