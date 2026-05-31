@@ -71,7 +71,7 @@ def run_simulation(params):
         if m % 12 == 0 or m == t_anspar: verlauf.append({'Alter': age, 'Kapital': k_nom / inf_fac})
         
         if m < t_anspar:
-            if m == m_einmal: k_nom += einmal * inf_fac; s_nom += einmal * inf_fac
+            if m == m_einmal: k_nom += einmal; s_nom += einmal
             k_nom *= (1 + r_ans_m); k_nom += spar_nom; s_nom += spar_nom; spar_nom *= (1 + dyn_m)
     
     final_spar_nom = spar_nom / (1 + dyn_m)
@@ -86,12 +86,11 @@ def run_simulation(params):
         t_ret = (a_ende - a_fire) * 12
         
         # Bärenmarkt-Setup (SoRR)
-        r_bear_y = [-0.20, -0.10, 0.00]
+        r_bear_y = [-0.20, -0.10, 0.00, 0.15, 0.15]
         
         # Start-Werte für Guardrails
         start_k_real = start_k_nom / (1+inf_m)**t_anspar
-        start_bedarf_real = entn_1_m
-        start_swr = (start_bedarf_real * 12 / start_k_real) if start_k_real > 1000 else 0.04
+        start_swr = 0.04
         guardrail_faktor = 1.0
 
         for m in range(t_ret):
@@ -108,15 +107,15 @@ def run_simulation(params):
                     current_swr = (base_bedarf * guardrail_faktor * 12 / current_k_real) if current_k_real > 1000 else start_swr
                     
                     if current_swr > start_swr * 1.2:
-                        guardrail_faktor *= 0.90  # 10% Kürzung bei starkem Crash
+                        guardrail_faktor = max(0.80, guardrail_faktor * 0.90)  # 10% Kürzung bei starkem Crash, Floor 80%
                     elif current_swr < start_swr * 0.8:
-                        guardrail_faktor *= 1.05  # 5% Erhöhung bei extrem guten Märkten
+                        guardrail_faktor = min(1.20, guardrail_faktor * 1.05)  # 5% Erhöhung bei extrem guten Märkten, Cap 120%
                         
                 bedarf = base_bedarf * guardrail_faktor
             else:
                 bedarf = base_bedarf
 
-            if (t_anspar + m) == m_einmal: k += einmal * inf_fac; s += einmal * inf_fac
+            if (t_anspar + m) == m_einmal: k += einmal; s += einmal
             brutto, _ = tax_logic(k, s, bedarf*inf_fac, tax_rate_entn, aktien_quote)
             if k > 0: s *= max(0, (1.0 - (brutto/k)))
             k -= brutto
@@ -126,7 +125,7 @@ def run_simulation(params):
             curr_r = r_ent_m
             if use_stresstest:
                 year = m // 12
-                if year < 3:
+                if year < len(r_bear_y):
                     y_rate = (1 + r_bear_y[year])**(1/12) - 1
                     curr_r = y_rate
             k *= (1 + curr_r)
@@ -147,7 +146,7 @@ def run_simulation(params):
     t_ret = (a_ende - a_fire) * 12
     
     # Gleiche Logik wie sim_ret für Konsistenz
-    r_bear_y = [-0.20, -0.10, 0.00]
+    r_bear_y = [-0.20, -0.10, 0.00, 0.15, 0.15]
     guardrail_faktor = 1.0
     start_swr = (entn_1_m * 12 / achieved_cap_real) if achieved_cap_real > 1000 else 0.04
 
@@ -163,15 +162,15 @@ def run_simulation(params):
                 current_swr = (base_bedarf * guardrail_faktor * 12 / current_k_real) if current_k_real > 1000 else start_swr
                 
                 if current_swr > start_swr * 1.2:
-                    guardrail_faktor *= 0.90  # 10% Kürzung bei starkem Crash
+                    guardrail_faktor = max(0.80, guardrail_faktor * 0.90)  # 10% Kürzung bei starkem Crash, Floor 80%
                 elif current_swr < start_swr * 0.8:
-                    guardrail_faktor *= 1.05  # 5% Erhöhung bei extrem guten Märkten
+                    guardrail_faktor = min(1.20, guardrail_faktor * 1.05)  # 5% Erhöhung bei extrem guten Märkten, Cap 120%
                     
             bedarf = base_bedarf * guardrail_faktor
         else:
             bedarf = base_bedarf
 
-        if (t_anspar + m) == m_einmal: k_nom += einmal * inf_fac; s_nom += einmal * inf_fac
+        if (t_anspar + m) == m_einmal: k_nom += einmal; s_nom += einmal
         brutto, t = tax_logic(k_nom, s_nom, bedarf*inf_fac, tax_rate_entn, aktien_quote)
         tax_real += t / inf_fac
         if k_nom > 0: s_nom *= max(0, (1.0 - (brutto/k_nom)))
@@ -187,7 +186,7 @@ def run_simulation(params):
         curr_r = r_ent_m
         if use_stresstest:
             year = m // 12
-            if year < 3:
+            if year < len(r_bear_y):
                 y_rate = (1 + r_bear_y[year])**(1/12) - 1
                 curr_r = y_rate
         k_nom *= (1 + curr_r)
@@ -362,10 +361,11 @@ with st.expander("🔬 Logik-Inspektor & Detaillierter Finanzbericht", expanded=
         st.markdown(f"""
         ### 🛡️ Sequence of Return Risk (SoRR)
         SoRR bedeutet: Wenn die Börse in den ersten Rentenjahren fällt, kann das Depot schneller schrumpfen.
-        Die App simuliert daher einen möglichen **Bärenmarkt** in den ersten 3 Jahren deiner Entnahmephase:
+        Die App simuliert daher einen möglichen **Bärenmarkt** mit anschließenden **Erholungsjahren** in den ersten 5 Jahren deiner Entnahmephase:
         - Jahr 1: **-20%**
         - Jahr 2: **-10%**
         - Jahr 3: **0%**
+        - Jahr 4 & 5: **+15%** (Erholungsphase / Rebound)
 
         Wenn der Schalter für den Stresstest aktiv ist, prüft die Simulation genau diese kritische Phase. Die Simulation ist dabei deterministisch: Die Renditen verlaufen nicht zufällig, sondern folgen diesen festen Werten.
 
@@ -380,6 +380,7 @@ with st.expander("🔬 Logik-Inspektor & Detaillierter Finanzbericht", expanded=
         - konservativerer Lebensstil.
 
         Diese Regel hilft dabei, den Plan auch in schlechten Marktphasen stabil zu halten.
+        Um extreme Schwankungen deines Lebensstandards zu verhindern, sind diese Anpassungen hart begrenzt auf **maximal ±20%** des ursprünglichen Faktors.
         """)
 
     with tab4:
