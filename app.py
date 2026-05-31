@@ -350,7 +350,7 @@ with st.expander("🔬 Logik-Inspektor & Detaillierter Finanzbericht", expanded=
         - Die App verwendet für die **Steuer Entnahmephase** dein eingegebenes `Steuer Entnahmephase (%)`.
         - Zusätzlich reduziert der ETF-Anteil die Steuerlast durch den **30% Rabatt**.
 
-        Dein eingestellter Aktienanteil: **{aktien_quote}%**
+        Dein eingestellter Aktien-ETF Anteil: **{aktien_quote}%**
         - Teilfreistellung-Faktor (TF): **{tf:.3f}**
         - Effektiver Steuerfaktor in der Rente: **{entn_eff_tax_pct:.3f}**
 
