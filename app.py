@@ -29,6 +29,29 @@ def get_smile_factor(alter, use_smile):
     elif alter < 80: return 0.8
     else: return 1.2
 
+
+def parse_query_param(key, default):
+    raw = st.query_params.get(key, None)
+    if raw is None:
+        return default
+    if isinstance(raw, list):
+        raw = raw[0] if raw else None
+    if raw is None:
+        return default
+    if isinstance(default, bool):
+        return str(raw) == 'True'
+    if isinstance(default, int):
+        try:
+            return int(float(raw))
+        except (TypeError, ValueError):
+            return default
+    if isinstance(default, float):
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return default
+    return raw
+
 # --- DIE CORE SIMULATION ENGINE ---
 
 def run_simulation(params):
@@ -213,32 +236,32 @@ st.markdown("### Präzisions-Engine für nominale Finanzplanung & Stress-Testing
 # SIDEBAR EINGABEN
 with st.sidebar:
     st.header("1. Zeiten & Sparen")
-    a_start = st.number_input("Aktuelles Alter", value=36, step=1)
-    a_fire = st.number_input("FIRE-Alter", value=50, step=1)
-    a_ges = st.number_input("Gesetzl. Rentenalter", value=67, step=1)
-    a_ende = st.number_input("Geplantes Endalter", value=87, step=1)
+    a_start = st.number_input("Aktuelles Alter", value=parse_query_param('a_start', 36), step=1)
+    a_fire = st.number_input("FIRE-Alter", value=parse_query_param('a_fire', 50), step=1)
+    a_ges = st.number_input("Gesetzl. Rentenalter", value=parse_query_param('a_ges', 67), step=1)
+    a_ende = st.number_input("Geplantes Endalter", value=parse_query_param('a_ende', 87), step=1)
     st.divider()
-    cap_start = st.number_input("Startkapital (€)", value=100000.0, step=5000.0)
-    sparrate_m = st.number_input("Monatl. Sparrate (€)", value=1000.0, step=100.0)
-    dyn = st.number_input("Sparraten-Dynamik (% p.a.)", value=1.0, step=0.1)
+    cap_start = st.number_input("Startkapital (€)", value=parse_query_param('cap_start', 100000.0), step=5000.0)
+    sparrate_m = st.number_input("Monatl. Sparrate (€)", value=parse_query_param('sparrate_m', 1000.0), step=100.0)
+    dyn = st.number_input("Sparraten-Dynamik (% p.a.)", value=parse_query_param('dyn', 1.0), step=0.1)
 
     st.header("2. Ausgaben & Erbe")
-    entn_1_m = st.number_input("Entnahme VOR Rente (€/Monat)", value=2500.0, step=100.0)
-    entn_2_m = st.number_input("Entnahme AB Rente (€/Monat)", value=1600.0, step=100.0)
-    einmal = st.number_input("Einmalzahlung / Erbe (€)", value=100000.0, step=10000.0)
-    a_einmal = st.number_input("Alter bei Einmalzahlung", value=55, step=1)
+    entn_1_m = st.number_input("Entnahme VOR Rente (€/Monat)", value=parse_query_param('entn_1_m', 2500.0), step=100.0)
+    entn_2_m = st.number_input("Entnahme AB Rente (€/Monat)", value=parse_query_param('entn_2_m', 1600.0), step=100.0)
+    einmal = st.number_input("Einmalzahlung / Erbe (€)", value=parse_query_param('einmal', 100000.0), step=10000.0)
+    a_einmal = st.number_input("Alter bei Einmalzahlung", value=parse_query_param('a_einmal', 55), step=1)
 
     st.header("3. Markt & Risiko")
-    r_anspar = st.number_input("Rendite Ansparphase (%)", value=7.5, step=0.1)
-    r_entn = st.number_input("Rendite Entnahme (%)", value=5.5, step=0.1)
-    infl = st.number_input("Inflation (%)", value=3.0, step=0.1)
-    tax_rate_anspar = st.number_input("Steuer Ansparphase (%)", value=26.375, step=0.1, format="%.3f")
-    tax_rate_entn = st.number_input("Steuer Entnahmephase (%)", value=26.375, step=0.1, format="%.3f", help="Tipp: Für die Günstigerprüfung im Alter hier z.B. 15% eintragen")
-    aktien_quote = st.slider("Aktien-ETF Quote im Depot (%)", min_value=0, max_value=100, value=100, step=5)
+    r_anspar = st.number_input("Rendite Ansparphase (%)", value=parse_query_param('r_anspar', 7.5), step=0.1)
+    r_entn = st.number_input("Rendite Entnahme (%)", value=parse_query_param('r_entn', 5.5), step=0.1)
+    infl = st.number_input("Inflation (%)", value=parse_query_param('infl', 3.0), step=0.1)
+    tax_rate_anspar = st.number_input("Steuer Ansparphase (%)", value=parse_query_param('tax_rate_anspar', 26.375), step=0.1, format="%.3f")
+    tax_rate_entn = st.number_input("Steuer Entnahmephase (%)", value=parse_query_param('tax_rate_entn', 26.375), step=0.1, format="%.3f", help="Tipp: Für die Günstigerprüfung im Alter hier z.B. 15% eintragen")
+    aktien_quote = st.slider("Aktien-ETF Quote im Depot (%)", min_value=0, max_value=100, value=parse_query_param('aktien_quote', 100), step=5)
     st.divider()
-    use_smile = st.checkbox("Spending Smile (U-Kurve)", value=True)
-    use_stresstest = st.checkbox("3-jähriger Bärenmarkt (SoRR)", value=True)
-    use_guardrails = st.checkbox("Guardrails (Sparmodus)", value=True)
+    use_smile = st.checkbox("Spending Smile (U-Kurve)", value=parse_query_param('use_smile', True))
+    use_stresstest = st.checkbox("3-jähriger Bärenmarkt (SoRR)", value=parse_query_param('use_stresstest', True))
+    use_guardrails = st.checkbox("Guardrails (Sparmodus)", value=parse_query_param('use_guardrails', True))
 
 # SIMULATION AUSFÜHREN
 sim_params = {
@@ -249,6 +272,9 @@ sim_params = {
     'tax_rate_anspar': tax_rate_anspar, 'tax_rate_entn': tax_rate_entn, 'aktien_quote': aktien_quote,
     'use_smile': use_smile, 'use_stresstest': use_stresstest, 'use_guardrails': use_guardrails
 }
+
+for key, val in sim_params.items():
+    st.query_params[key] = str(val)
 
 results = run_simulation(sim_params)
 
