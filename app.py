@@ -257,7 +257,10 @@ with st.sidebar:
     infl = st.number_input("Inflation (%)", value=parse_query_param('infl', 3.0), step=0.1)
     tax_rate_anspar = st.number_input("Steuer Ansparphase (%)", value=parse_query_param('tax_rate_anspar', 26.375), step=0.1, format="%.3f")
     tax_rate_entn = st.number_input("Steuer Entnahmephase (%)", value=parse_query_param('tax_rate_entn', 26.375), step=0.1, format="%.3f", help="Tipp: Für die Günstigerprüfung im Alter hier z.B. 15% eintragen")
-    aktien_quote = st.slider("Aktien-ETF Quote im Depot (%)", min_value=0, max_value=100, value=parse_query_param('aktien_quote', 100), step=5)
+    # Slider value: Round to nearest step=5 multiple to avoid mismatch
+    slider_val = parse_query_param('aktien_quote', 100)
+    slider_val = round(slider_val / 5) * 5 if isinstance(slider_val, (int, float)) else 100
+    aktien_quote = st.slider("Aktien-ETF Quote im Depot (%)", min_value=0, max_value=100, value=slider_val, step=5)
     st.divider()
     use_smile = st.checkbox("Spending Smile (U-Kurve)", value=parse_query_param('use_smile', True))
     use_stresstest = st.checkbox("3-jähriger Bärenmarkt (SoRR)", value=parse_query_param('use_stresstest', True))
@@ -273,8 +276,21 @@ sim_params = {
     'use_smile': use_smile, 'use_stresstest': use_stresstest, 'use_guardrails': use_guardrails
 }
 
+# Update query_params only if values changed (prevent rerun loop)
 for key, val in sim_params.items():
-    st.query_params[key] = str(val)
+    # Format value: round floats to 10 decimals to avoid precision issues
+    if isinstance(val, float):
+        formatted_val = str(round(val, 10))
+    else:
+        formatted_val = str(val)
+    
+    # Get existing value from URL
+    existing = st.query_params.get(key)
+    existing_str = str(existing[0]) if isinstance(existing, list) and existing else (str(existing) if existing else None)
+    
+    # Only update if value changed
+    if existing_str != formatted_val:
+        st.query_params[key] = formatted_val
 
 results = run_simulation(sim_params)
 
